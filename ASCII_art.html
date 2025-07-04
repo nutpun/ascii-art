@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ASCII Art Sound Studio</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: radial-gradient(circle at top, #7f8fff, #331777);
+            font-family: 'Courier New', Courier, monospace;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        h1 {
+            font-size: 2em;
+            color: #90f090;
+            text-shadow: 2px 2px 5px #000, 0 0 10px #0f0;
+            margin: 20px 0 10px;
+        }
+
+        h1::before {
+            content: "🎵 ";
+        }
+
+        #toolbar {
+            margin-bottom: 10px;
+        }
+
+        button {
+            background: linear-gradient(to bottom, #ff6b6b, #ff4757);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            padding: 10px 15px;
+            margin: 5px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        button:nth-child(2) {
+            background: linear-gradient(to bottom, #34e89e, #0f9b8e);
+        }
+
+        #toggleEraser {
+            background: linear-gradient(to bottom, #f6d365, #fda085);
+        }
+
+        button:hover {
+            transform: scale(1.05);
+        }
+
+        .pattern-display {
+            background: #111;
+            border-radius: 10px;
+            padding: 10px;
+            margin: 10px 0;
+            border: 2px solid #444;
+            box-shadow: 0 0 10px #000;
+        }
+
+        .pattern-name {
+            font-weight: bold;
+            color: gold;
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+
+        .pattern-chars span {
+            font-size: 24px;
+            margin: 0 4px;
+            text-shadow: 0 0 5px #0f0;
+        }
+
+        #canvas {
+            display: grid;
+            grid-template-columns: repeat(30, 28px);
+            grid-template-rows: repeat(20, 30px);
+            gap: 1px;
+            background: #000;
+            padding: 10px;
+            border-radius: 14px;
+            box-shadow: 0 0 20px #000;
+            touch-action: none;
+            user-select: none;
+            cursor: crosshair;
+        }
+
+        .cell {
+            width: 28px;
+            height: 30px;
+            font-size: 22px;
+            text-align: center;
+            line-height: 30px;
+            background: #111;
+            border-radius: 4px;
+            transition: background 0.1s ease, color 0.2s ease;
+            user-select: none;
+        }
+
+        .cell.drawn {
+            background: #222;
+        }
+
+        #charPicker button {
+            font-size: 20px;
+            margin: 2px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: #333;
+            color: white;
+            border: 2px solid transparent;
+        }
+
+        #charPicker button.selected {
+            border-color: gold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>ASCII Art Sound Studio 🎨</h1>
+    <p>Click and drag to draw • Each character plays a musical note!</p>
+
+    <div id="toolbar">
+        <button id="switchPattern">SWITCH PATTERN</button>
+        <button id="clearCanvas">CLEAR CANVAS</button>
+        <button id="toggleEraser">ERASER: OFF</button>
+    </div>
+
+    <div class="pattern-display">
+        <div class="pattern-name" id="patternName">Pattern</div>
+        <div class="pattern-chars" id="patternChars" style="display: none;"></div>
+        <div id="charPicker" style="margin-top: 8px;"></div>
+    </div>
+
+    <div id="canvas"></div>
+
+    <script>
+        const patterns = [
+            {
+                name: 'Flower Emojis',
+                chars: ['🌸', '🌼', '🌺', '🌻', '🌷'],
+                notes: [523.25, 587.33, 659.25, 698.46, 783.99]
+            },
+            {
+                name: 'Nature Elements',
+                chars: ['🌲', '🌳', '🌴', '🎋', '🍀'],
+                notes: [220.00, 246.94, 261.63, 293.66, 329.63]
+            },
+            {
+                name: 'Classic Symbols',
+                chars: ['*', '+', '.', '^', '~'],
+                notes: [261.63, 293.66, 329.63, 349.23, 392.00]
+            },
+            {
+                name: 'Tech Symbols',
+                chars: ['#', '@', '%', '&', '$'],
+                notes: [392.00, 440.00, 493.88, 523.25, 587.33]
+            },
+            {
+                name: 'Shapes',
+                chars: ['□', '■', '●', '◉', '◍'],
+                notes: [220.00, 246.94, 261.63, 293.66, 311.13]
+            }
+        ];
+
+        const colorSets = [
+            ['#f78fe7', '#ffb3de', '#ffc0cb', '#f0a', '#d36'],        // Flower Emojis
+            ['#5e8d52', '#7ca982', '#91c789', '#a0e9a3', '#cdf7d0'],  // Nature Elements
+            ['#0f0', '#6f6', '#8f8', '#4f4', '#afa'],                 // Classic Symbols
+            ['#ff5', '#fd0', '#fb0', '#ff8c00', '#ffa500'],           // Tech Symbols
+            ['#0ff', '#0cf', '#08f', '#06c', '#04a']                  // Shapes
+        ];
+
+
+        let currentPattern = 0;
+        let isErasing = false;
+        let selectedCharIndex = null;
+        const canvas = document.getElementById('canvas');
+        const cells = [];
+        let isDrawing = false;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        const patternNameEl = document.getElementById('patternName');
+        const patternCharsEl = document.getElementById('patternChars');
+        const charPicker = document.getElementById('charPicker');
+
+        function updatePatternDisplay() {
+            const pattern = patterns[currentPattern];
+            patternNameEl.textContent = pattern.name;
+            patternCharsEl.innerHTML = pattern.chars.map(c => `<span>${c}</span>`).join('');
+            charPicker.innerHTML = '';
+            selectedCharIndex = null;
+            pattern.chars.forEach((char, idx) => {
+                const btn = document.createElement('button');
+                btn.textContent = char;
+                btn.onclick = () => {
+                    if (selectedCharIndex === idx) {
+                        // Clicking the same character deselects it
+                        selectedCharIndex = null;
+                        btn.classList.remove('selected');
+                    } else {
+                        // Select new character
+                        selectedCharIndex = idx;
+                        Array.from(charPicker.children).forEach(b => b.classList.remove('selected'));
+                        btn.classList.add('selected');
+                    }
+                };
+                charPicker.appendChild(btn);
+            });
+        }
+
+        for (let y = 0; y < 20; y++) {
+            for (let x = 0; x < 30; x++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                canvas.appendChild(cell);
+                cells.push(cell);
+
+                cell.addEventListener('mousedown', () => {
+                    isDrawing = true;
+                    drawCell(cell);
+                });
+                cell.addEventListener('mouseover', () => {
+                    if (isDrawing) drawCell(cell);
+                });
+                cell.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    isDrawing = true;
+                    drawCell(cell);
+                });
+                cell.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (element?.classList.contains('cell')) {
+                        drawCell(element);
+                    }
+                });
+            }
+        }
+
+        document.body.addEventListener('mouseup', () => isDrawing = false);
+        document.body.addEventListener('touchend', () => isDrawing = false);
+
+        function drawCell(cell) {
+            if (isErasing) {
+                cell.textContent = '';
+                cell.classList.remove('drawn');
+                cell.style.color = '';
+                return;
+            }
+
+            const pattern = patterns[currentPattern];
+            let index = selectedCharIndex !== null
+                ? selectedCharIndex
+                : Math.floor(Math.random() * pattern.chars.length);
+
+            const char = pattern.chars[index];
+            const note = pattern.notes[index];
+            const color = colorSets[currentPattern][index];
+
+            cell.textContent = char;
+            cell.classList.add('drawn');
+            cell.style.color = color;
+            playNote(note);
+        }
+
+        function playNote(freq) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+        }
+
+        document.getElementById('switchPattern').addEventListener('click', () => {
+            currentPattern = (currentPattern + 1) % patterns.length;
+            updatePatternDisplay();
+        });
+
+        document.getElementById('clearCanvas').addEventListener('click', () => {
+            cells.forEach(cell => {
+                cell.textContent = '';
+                cell.classList.remove('drawn');
+                cell.style.color = '';
+            });
+        });
+
+        document.getElementById('toggleEraser').addEventListener('click', () => {
+            isErasing = !isErasing;
+            document.getElementById('toggleEraser').textContent = `ERASER: ${isErasing ? 'ON' : 'OFF'}`;
+        });
+
+        updatePatternDisplay();
+    </script>
+</body>
+
+</html>
